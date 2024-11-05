@@ -40,8 +40,8 @@ This project centers on uncovering the inner workings of transformers within lar
 
 1. Clone this repository:
 
-   ```bash
-   git clone https://github.com/nljumaoas/dsc180a.git
+  ```bash
+  git clone https://github.com/nljumaoas/dsc180a.git
   ```
 2. Navigate into the project directory:
 
@@ -58,7 +58,7 @@ This project centers on uncovering the inner workings of transformers within lar
 Open the Jupyter Notebook:
 
   ```bash
-  jupyter notebook notebook_name.ipynb
+  jupyter notebook llama1b.ipynb
   ```
 
 Execute each cell sequentially in the notebook to preprocess data, configure the model, and initiate training. Ensure cells are run in order for reproducible results.
