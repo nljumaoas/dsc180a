@@ -10,3 +10,5 @@ evaluate
 jinja2
 jupyter
 ipykernel
+deepspeed
+datasets

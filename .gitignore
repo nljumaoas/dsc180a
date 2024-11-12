@@ -4,3 +4,4 @@ dsc180a_env/
 model_checkpoints/
 wandb/
 tensorboard_logs/
+results/

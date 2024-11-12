@@ -2,10 +2,9 @@ from datasets import load_dataset, load_from_disk
 from transformers import AutoTokenizer, AutoModelForCausalLM, LlamaConfig, LlamaForCausalLM, TrainingArguments, Trainer, DataCollatorForLanguageModeling
 import torch
 import os
-from trl import SFTTrainer
 from accelerate import init_empty_weights
 from datasets import load_dataset, DatasetDict
-import tensorboard
+
 
 
 # Load Data and Model
@@ -20,7 +19,7 @@ model = AutoModelForCausalLM.from_pretrained(model_name, cache_dir = cache_dir )
 model = AutoModelForCausalLM.from_config(model.config)
 model.to(device)
 model_size = sum(t.numel() for t in model.parameters())
-print(f"TinyLlama size: {model_size/1000**2:.1f}M parameters")
+print(f"Model size: {model_size/1000**2:.1f}M parameters")
 
 # - Load Small Dataset
 ds_train = load_dataset("huggingface-course/codeparrot-ds-train", split="train[:1%]", cache_dir=cache_dir)
@@ -54,7 +53,7 @@ def tokenize(element):
 
 print(f"Start batch tokenizing datasets")
 tokenized_datasets = raw_datasets.map(
-    tokenize, batched=True, remove_columns=raw_datasets["train"].column_names, batch_size=64, num_proc=64
+    tokenize, batched=True, remove_columns=raw_datasets["train"].column_names, batch_size=16, num_proc=64
 )
 
 
@@ -65,22 +64,20 @@ data_collator = DataCollatorForLanguageModeling(tokenizer, mlm=False)
 torch.cuda.empty_cache()
 args = TrainingArguments(
     output_dir="model_checkpoints",
-    per_device_train_batch_size=18,
-    per_device_eval_batch_size=18,
+    per_device_train_batch_size=4,
+    per_device_eval_batch_size=4,
     evaluation_strategy="steps",
     eval_steps=30,
-    logging_steps=50,
-    gradient_accumulation_steps=8,
+    logging_steps=100,
     num_train_epochs=10,
     weight_decay=0.1,
     warmup_steps=1_000,
     lr_scheduler_type="cosine",
     learning_rate=5e-4,
-    save_steps=5_0,
+    save_steps=500,
     fp16=True,
     report_to=["tensorboard"],
-    logging_dir = "tensorboard_logs",
-    gradient_checkpointing=True
+    logging_dir = "tensorboard_logs"
 )
 
 
