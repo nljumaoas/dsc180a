@@ -5,3 +5,5 @@ model_checkpoints/
 wandb/
 tensorboard_logs/
 results/
+final_model/
+datasets/
