@@ -6,10 +6,18 @@ import os
 import random
 import numpy as np
 import deepspeed
+from torch.cuda.amp import autocast
 
 # Set up environment variables
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
+os.environ["MASTER_ADDR"] = "localhost" 
+os.environ["MASTER_PORT"] = "9994" 
+# os.environ["NCCL_IB_DISABLE"] = "1"
+os.environ["NCCL_P2P_DISABLE"] = '1'
+# os.environ["NCCL_SOCKET_IFNAME"] = "eth0"
+# os.environ["NCCL_BLOCKING_WAIT"] = "1"
+# os.environ["NCCL_TIMEOUT"] = "600"  
 def seed_everything(seed: int):
     random.seed(seed)
     os.environ['PYTHONHASHSEED'] = str(seed)
@@ -61,46 +69,12 @@ learning_rate = 2e-5
 
 def initialize_model(config_path='./configs/config.json'):
     # the default config path is for llama 3.1 8b model
+    print("Initializing model...")
     with deepspeed.zero.Init():
-        config = LlamaConfig.from_pretrained(config_path, attn_implementation = attn_implementation)
+        config = LlamaConfig.from_pretrained(config_path)
         model = LlamaForCausalLM(config=config)
     return model
 
-def print_memory_usage(step, stage):
-    allocated = torch.cuda.memory_allocated()
-    reserved = torch.cuda.memory_reserved()
-    print(f"Step {step} ({stage}): Allocated: {allocated / (1024 ** 3):.2f} GB, Reserved: {reserved / (1024 ** 3):.2f} GB")
-
-class TrainerMemoryMonitor(Trainer):
-    def training_step(self, model, inputs):
-        step = self.state.global_step
-        print_memory_usage(step, "training_step> before")
-        model.train()
-        inputs = self._prepare_inputs(inputs)
-
-        with self.compute_loss_context_manager():
-            print_memory_usage(step, "forward pass: -before")
-            loss = self.compute_loss(model, inputs)
-            print_memory_usage(step, "forward pass: -after")
-
-        # On multi-GPU parallel training use mean() to average 
-        if self.args.n_gpu > 1:
-            loss = loss.mean()  
-        
-        # Clean cache
-        torch.cuda.empty_cache()
-        print_memory_usage(step, "backward pass> before")
-
-        # Use `self.accelerator.backward()` for mixed-precision backward pass
-        self.accelerator.backward(loss)
-
-        print_memory_usage(step, "backward pass> after")
-        print_memory_usage(step, "training_step> after")
-        
-        # Clean cache again
-        torch.cuda.empty_cache()
-        
-        return loss.detach() / self.args.gradient_accumulation_steps
 def main():
 
     # Load tokenizer and model
@@ -134,20 +108,13 @@ def main():
         gradient_checkpointing = gradient_checkpointing,
         save_strategy = save_strategy,
     )
-    # trainer = Trainer(
-    #     model=model,
-    #     args=training_args,
-    #     tokenizer=tokenizer,
-    #     train_dataset=dataset_train,
-    #     eval_dataset=dataset_eval,
-    #     data_collator=data_collator
-    # )
-    trainer = TrainerMemoryMonitor(
-        model = model, 
+    trainer = Trainer(
+        model=model,
         args=training_args,
+        tokenizer=tokenizer,
         train_dataset=dataset_train,
         eval_dataset=dataset_eval,
-        tokenizer=tokenizer,
+        data_collator=data_collator
     )
 
     # Start training and visualizing

@@ -12,3 +12,4 @@ jupyter
 ipykernel
 deepspeed
 datasets
+flash-attn --no-build-isolation
