@@ -142,3 +142,75 @@ def print_dataset_shape(dataset, dataset_name="Dataset", output_file="./hf_cache
     samples = dataset[:3]
     
     save_samples_to_json(samples, output_file)
+
+
+def MFU_calculation(batch_size, sequence_length, model_name, number_of_GPU, GPU_peak_TFLOPS, iteration_time):
+    """
+    Calculates Model FLOPs Utilization (MFU) for a given model and hardware setup.
+
+    Parameters:
+    - batch_size (int): Batch size used in training.
+    - sequence_length (int): Sequence length of the input data.
+    - model_name (str): Name of the model (e.g., 'llama3-8b', 'llama3.2-1b', 'llama2-7b').
+    - number_of_GPU (int): Number of GPUs used.
+    - GPU_peak_TFLOPS (float): Theoretical peak TFLOPs of a single GPU.
+    - iteration_time (float): Time taken for one iteration (in seconds).
+
+    Returns:
+    - str: MFU as a percentage rounded to 4 decimal places.
+    """
+
+    # Model-specific parameters based on the provided model_name
+    model_params = {
+        'llama3.1-8b': {
+            'v': 128256,  # Vocabulary size
+            'n': 32,       # Number of attention heads
+            'h': 4096,    # Hidden state dimension
+            'i': 14336,   # SwiGLU projection dimension
+            'N': 32       # Number of layers
+        },
+        'llama3.2-1b': {
+            'v': 128256,
+            'n': 32,
+            'h': 2048,
+            'i': 8192,
+            'N': 16
+        },
+        'llama2-7b': {
+            'v': 32000,
+            'n': 32,
+            'h': 4096,
+            'i': 11008,
+            'N': 32
+        }
+    }
+
+    # Ensure model_name is valid
+    if model_name not in model_params:
+        raise ValueError(f"Model '{model_name}' not recognized. Valid models: {list(model_params.keys())}")
+
+    # Extract model-specific parameters
+    params = model_params[model_name]
+    v, n, h, i, N = params['v'], params['n'], params['h'], params['i'], params['N']
+
+    b = batch_size
+    s = sequence_length
+
+    # FLOPs calculation for one forward pass
+    flops_per_forward = (
+        N * (6 * b * s * h**2 + 4 * b * s**2 * h + 3 * b * s**2 * n + 2 * b * s * h**2)
+        + N * (6 * b * s * h * i)
+        + 2 * b * s * h * v
+    )
+
+    # Forward-backward pass is roughly 3 times the forward pass FLOPs
+    flops_per_forward_backward = (3 * flops_per_forward) / 10**12  # Convert to TFLOPs
+
+    # GPU peak TFLOPs per iteration
+    GPU_TFLOPs_per_iteration = number_of_GPU * GPU_peak_TFLOPS * iteration_time
+
+    # Calculate MFU
+    MFU = (flops_per_forward_backward / GPU_TFLOPs_per_iteration) * 100
+
+    # Return MFU rounded to 4 decimal places
+    return f"MFU: {MFU:.4f}%"

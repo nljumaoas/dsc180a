@@ -23,8 +23,10 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Initialize training hyperparameters
 ## I/O Paths
-# data_path = "./datasets/SlimPajama-6B_tokenized_data"
-data_path = "/workspace/ML_team/datasets_70_1024/tokenized_data"
+data_path = "./datasets/SlimPajama-6B_tokenized_data"
+# data_path = "/workspace/ML_team/datasets_70_1024/tokenized_data"
+dataset_train = load_from_disk(os.path.join("/workspace/ML_team/datasets_pack_full/tokenized_data", "train"))
+dataset_eval = load_from_disk(os.path.join("/workspace/ML_team/datasets_pack_full/tokenized_data", "validation"))
 model_path = './configs/model_configs/llama_1b_config.json'
 checkpoint_output_dir = './model_checkpoints'
 deepspeed_config = './configs/deepspeed_configs/test_ds_zero3_plus_config.json'
@@ -32,23 +34,27 @@ tokenizer_config = './configs/llama_tokenizer_configs'
 logging_dir = './logs'
 
 ## Training args
-max_seq_len = 1024
 num_proc = 50
 attn_implementation = determine_compute_dtype_and_attention()
 eval_strategy = "steps"
 vis_app = 'wandb'
 save_strategy = 'no'
 logging_steps = 100
-eval_steps = 100
+eval_steps = 50
 num_epoch = 3
 gradient_checkpointing_status = False
-batch_size = 2
+batch_size = 4
 gradient_checkpointing = True
 fp16 = not torch.cuda.is_bf16_supported()
 bf16 = torch.cuda.is_bf16_supported()
 learning_rate = 3e-4
 gradient_accumulation = 16
 weight_decay = 0.1 * learning_rate
+
+# Wandb variables
+wandb_key = '5c18e0e1920e548d7cd21774c89c6e9a28facc65'
+project_name = 'dsc180a'
+entity_name = 'yuxuan_zhang13-uc-san-diego'
 
 
 def initialize_model(config_path='./configs/model_configs/llama_8b_config.json'):
@@ -61,6 +67,10 @@ def initialize_model(config_path='./configs/model_configs/llama_8b_config.json')
     return model
 
 def main():
+    
+    wandb.login(key = wandb_key)  # Log in directly without setting env variable
+    wandb.init(project=project_name, entity=entity_name)
+
 
     # load tokenizer and model
     print(f"Computing type: {attn_implementation['compute_dtype']}")
@@ -72,8 +82,8 @@ def main():
     model.config.use_cache=False
 
 
-    dataset_train = load_from_disk(os.path.join(data_path, "train"), num_proc=num_proc)
-    dataset_eval = load_from_disk(os.path.join(data_path, "validation"), num_proc=num_proc)
+    dataset_train = load_from_disk(os.path.join(data_path, "train"))
+    dataset_eval = load_from_disk(os.path.join(data_path, "validation"))
 
 
     torch.cuda.empty_cache()  # Clear any residual GPU memory usage
@@ -82,7 +92,7 @@ def main():
     training_args = TrainingArguments(
         output_dir = checkpoint_output_dir,
         evaluation_strategy = eval_strategy,
-        eval_steps = 100,
+        eval_steps = eval_steps,
         learning_rate = learning_rate,
         per_device_train_batch_size = batch_size, 
         per_device_eval_batch_size = batch_size,
@@ -119,6 +129,8 @@ def main():
     model.save_pretrained("./final_model/target_model_config")
     tokenizer.save_pretrained("./final_model/target_tokenizer_config")
     print("Saved final model and tokenizer.")
+
+    wandb.finish()
 
 
 if __name__ == "__main__":

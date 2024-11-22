@@ -6,8 +6,8 @@ from utilities import seed_everything, print_dataset_shape
 # Define constants for caching paths and sequence length
 CACHE_DIR = "./hf_cache"
 TOKENIZER_DIR = './configs/llama_tokenizer_configs'
-TOKENIZED_DATA_CACHE_DIR = "./datasets/SlimPajama-6B_tokenized_data"
-MAX_SEQ_LEN = 1024
+TOKENIZED_DATA_CACHE_DIR = "./datasets/SlimPajama-6B_tokenized_data_baseline"
+MAX_SEQ_LEN = 2048
 DATASET_NAME = 'DKYoon/SlimPajama-6B'
 NUM_PROC = 50
 
@@ -21,8 +21,8 @@ def prepare_and_cache_dataset():
 
     # Load the dataset
     print(f"Start Loading Dataset: {DATASET_NAME}...")
-    train_subset = load_dataset(DATASET_NAME, split="train[:1%]", cache_dir=CACHE_DIR, download_mode='reuse_cache_if_exists')
-    validation_subset = load_dataset(DATASET_NAME, split="validation[:1%]", cache_dir=CACHE_DIR, download_mode='reuse_cache_if_exists')
+    train_subset = load_dataset(DATASET_NAME, split="train[:10%]", cache_dir=CACHE_DIR, download_mode='reuse_cache_if_exists')
+    validation_subset = load_dataset(DATASET_NAME, split="validation[:10%]", cache_dir=CACHE_DIR, download_mode='reuse_cache_if_exists')
 
     # Tokenization function with max length truncation
     def tokenize_function(examples):
