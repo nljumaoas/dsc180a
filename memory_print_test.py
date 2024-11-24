@@ -7,7 +7,7 @@ import random
 import numpy as np
 import deepspeed
 from torch.cuda.amp import autocast
-from utilities import seed_everything, check_cuda_availability, determine_compute_dtype_and_attention
+from utilities import seed_everything, check_cuda_availability, determine_compute_dtype_and_attention, TrainerMemoryMonitor
 
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -23,11 +23,16 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Initialize training hyperparameters
 ## I/O Paths
-# data_path = "./datasets/SlimPajama-6B_tokenized_data"
-data_path = "/workspace/ML_team/datasets_pack_full/tokenized_data"
+data_path = "./datasets/SlimPajama-6B_tokenized_data"
+# data_path = "/workspace/ML_team/datasets_70_1024/tokenized_data"
+dataset_train = load_from_disk(os.path.join("/workspace/ML_team/datasets_pack_full/tokenized_data", "train"))
+dataset_eval = load_from_disk(os.path.join("/workspace/ML_team/datasets_pack_full/tokenized_data", "validation"))
 model_path = './configs/model_configs/llama_1b_config.json'
 checkpoint_output_dir = './model_checkpoints'
+
+# deepspeed_config = './configs/deepspeed_configs/test_memory_ds_config.json' # set to deepspeed config from medium post
 deepspeed_config = './configs/deepspeed_configs/test_ds_zero3_plus_config.json'
+
 tokenizer_config = './configs/llama_tokenizer_configs'
 logging_dir = './logs'
 
@@ -50,9 +55,9 @@ gradient_accumulation = 16
 weight_decay = 0.1 * learning_rate
 
 # Wandb variables
-wandb_key = '5c18e0e1920e548d7cd21774c89c6e9a28facc65'
-project_name = 'dsc180a'
-entity_name = 'yuxuan_zhang13-uc-san-diego'
+wandb_key = '2b4c37f67aa8d460e76224d4348ddb16fbb843e5'
+project_name = 'memory_test'
+entity_name = 'fjiang7-ucsd'
 
 
 def initialize_model(config_path='./configs/model_configs/llama_8b_config.json'):
@@ -76,9 +81,13 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_config)
     tokenizer.pad_token = tokenizer.eos_token
     model = initialize_model(model_path)
+
+    # model.resize_token_embeddings(len(tokenizer))
+
     model.to(device)
     model.config.use_cache=False
 
+    print(f"Embed tokens weight shape: {model.model.embed_tokens.weight.shape}")
 
     dataset_train = load_from_disk(os.path.join(data_path, "train"))
     dataset_eval = load_from_disk(os.path.join(data_path, "validation"))
@@ -112,7 +121,8 @@ def main():
     )
 
     data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
-    trainer = Trainer(
+    
+    trainer = TrainerMemoryMonitor(
         model=model,
         args=training_args,
         tokenizer=tokenizer,

@@ -7,7 +7,7 @@ import random
 import numpy as np
 import deepspeed
 from torch.cuda.amp import autocast
-from utilities import seed_everything, check_cuda_availability, determine_compute_dtype_and_attention
+from utilities import seed_everything, check_cuda_availability, determine_compute_dtype_and_attention, count_parameters
 
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -25,9 +25,9 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 ## I/O Paths
 # data_path = "./datasets/SlimPajama-6B_tokenized_data"
 data_path = "/workspace/ML_team/datasets_pack_full/tokenized_data"
-model_path = './configs/model_configs/llama_1b_config.json'
+model_path = './configs/model_configs/llama_190M_config.json'
 checkpoint_output_dir = './model_checkpoints'
-deepspeed_config = './configs/deepspeed_configs/test_ds_zero3_plus_config.json'
+deepspeed_config = './configs/deepspeed_configs/test_ds_zero2_config.json'
 tokenizer_config = './configs/llama_tokenizer_configs'
 logging_dir = './logs'
 
@@ -36,32 +36,43 @@ num_proc = 50
 attn_implementation = determine_compute_dtype_and_attention()
 eval_strategy = "steps"
 vis_app = 'wandb'
-save_strategy = 'no'
-logging_steps = 100
-eval_steps = 50
+save_strategy = 'steps'
+save_steps = 1000
+logging_steps = 20
+eval_steps = 100
 num_epoch = 3
-gradient_checkpointing_status = False
-batch_size = 4
-gradient_checkpointing = True
+batch_size = 8
+gradient_checkpointing = False
 fp16 = not torch.cuda.is_bf16_supported()
 bf16 = torch.cuda.is_bf16_supported()
 learning_rate = 3e-4
-gradient_accumulation = 16
+gradient_accumulation = 1
 weight_decay = 0.1 * learning_rate
+save_total_limit=2
 
 # Wandb variables
-wandb_key = '5c18e0e1920e548d7cd21774c89c6e9a28facc65'
-project_name = 'dsc180a'
-entity_name = 'yuxuan_zhang13-uc-san-diego'
+wandb_key = 'ae05f44c8d5afe19940ef81e6f5cf69063392241'
+project_name = 'llama-training'
+entity_name = 'fjiang7-ucsd'
 
 
 def initialize_model(config_path='./configs/model_configs/llama_8b_config.json'):
     # the default config path is for llama 3.1 8b model
-    with deepspeed.zero.Init():
-        config = AutoConfig.from_pretrained(config_path)
-        model = AutoModelForCausalLM.from_config(config, 
-                                                 attn_implementation=attn_implementation["attn_implementation"], 
-                                                 torch_dtype=attn_implementation["compute_dtype"])
+    # with deepspeed.zero.Init():
+    #     config = AutoConfig.from_pretrained(config_path)
+    #     model = AutoModelForCausalLM.from_config(config, 
+    #                                              attn_implementation=attn_implementation["attn_implementation"], 
+    #                                              torch_dtype=attn_implementation["compute_dtype"])
+    config = AutoConfig.from_pretrained(config_path)
+    model = AutoModelForCausalLM.from_config(config, 
+                                             attn_implementation=attn_implementation["attn_implementation"], 
+                                             torch_dtype=attn_implementation["compute_dtype"])
+    print(f"Total number of trainable parameters: {count_parameters(model):,}")
+    def inspect_model_params(model):
+        for name, param in model.named_parameters():
+            print(f"{name}: {param.numel()}")
+
+    inspect_model_params(model)
     return model
 
 def main():
@@ -78,6 +89,7 @@ def main():
     model = initialize_model(model_path)
     model.to(device)
     model.config.use_cache=False
+
 
 
     dataset_train = load_from_disk(os.path.join(data_path, "train"))
@@ -101,24 +113,34 @@ def main():
         logging_dir = logging_dir,
         logging_steps = logging_steps,
         lr_scheduler_type="cosine",
-        save_steps = 500,
+        save_steps = save_steps,
         deepspeed = deepspeed_config,
         fp16 = fp16,
         bf16 = bf16,  
         warmup_steps=500,
-        gradient_checkpointing = gradient_checkpointing_status,
+        gradient_checkpointing = gradient_checkpointing,
         save_strategy = save_strategy,
-        save_total_limit=2,
+        save_total_limit=save_total_limit,
     )
 
-    data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
+    def custom_collator(batch):
+        # Assuming the batch contains 'input_ids', 'attention_mask', and 'labels'
+        input_ids = torch.stack([torch.tensor(x['input_ids']) for x in batch])
+        labels = input_ids
+        attention_mask = torch.stack([torch.tensor(x['attention_mask']) for x in batch])
+        return {
+            'input_ids': input_ids,
+            'attention_mask': attention_mask,
+            'labels': labels
+        }
+    
     trainer = Trainer(
         model=model,
         args=training_args,
         tokenizer=tokenizer,
         train_dataset=dataset_train,
         eval_dataset=dataset_eval,
-        data_collator=data_collator
+        data_collator=custom_collator
     )
 
     print("Start training...")

@@ -1,4 +1,4 @@
-from transformers import LlamaConfig, LlamaForCausalLM
+from transformers import LlamaConfig, LlamaForCausalLM, AutoModelForCausalLM, AutoTokenizer, Trainer
 from deepspeed.runtime.zero.stage3 import estimate_zero3_model_states_mem_needs_all_live
 from deepspeed.runtime.zero.stage_1_and_2 import estimate_zero2_model_states_mem_needs_all_live
 import os
@@ -6,6 +6,7 @@ import random
 import numpy as np
 import torch
 import json
+import time
 
 CACHE_DIR = "./hf_cache"
 SAMPLE_OUTPUT_FILE = os.path.join(CACHE_DIR, "tokenized_sample_output.txt")
@@ -214,3 +215,140 @@ def MFU_calculation(batch_size, sequence_length, model_name, number_of_GPU, GPU_
 
     # Return MFU rounded to 4 decimal places
     return f"MFU: {MFU:.4f}%"
+
+
+def infer_from_checkpoint(
+    model_path: str = '/workspace/ML_team/train/model_checkpoints/checkpoint-2000',
+    prompt: str = "Hello, how's it going?",
+    max_length: int = 50
+) -> str:
+    """
+    Perform inference using a pretrained language model checkpoint with a default device as CUDA.
+    
+    :param model_path: Path to the directory containing the model checkpoint.
+    :param prompt: Input prompt for the model. Defaults to a generic prompt.
+    :param max_length: Maximum length of the generated text.
+    :return: Generated text.
+    """
+    try:
+        # Default device to CUDA
+        if torch.cuda.is_available():
+            device = "cuda"
+        else:
+            raise RuntimeError("CUDA device is not available. Please ensure a GPU is accessible.")
+        
+        # Load the tokenizer and model from the checkpoint
+        tokenizer = AutoTokenizer.from_pretrained(model_path)
+        model = AutoModelForCausalLM.from_pretrained(model_path)
+
+        # Set the pad token if it does not exist
+        if tokenizer.pad_token is None:
+            if tokenizer.eos_token is not None:
+                tokenizer.pad_token = tokenizer.eos_token
+            else:
+                tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+                model.resize_token_embeddings(len(tokenizer))  # Resize model embeddings
+
+        # Move the model to the CUDA device
+        model.to(device)
+        
+        # Encode the input prompt and move it to CUDA
+        input_ids = tokenizer(prompt, return_tensors="pt", padding=True, truncation=True).input_ids.to(device)
+        # Please corresponding attention masks
+        # Generate text with specific settings
+        output = model.generate(
+            input_ids,
+            max_length=max_length,
+            num_return_sequences=1,
+            pad_token_id=tokenizer.pad_token_id,  # Handle pad tokens
+            do_sample=True,  # Enable sampling for diverse outputs
+            top_k=50,  # Top-k sampling
+            top_p=0.9  # Nucleus sampling
+        )
+        
+        # Decode and return the generated text
+        return tokenizer.decode(output[0], skip_special_tokens=True)
+    except Exception as e:
+        return f"An error occurred during inference: {str(e)}"
+
+def print_memory_usage(step, stage):
+    allocated = torch.cuda.memory_allocated()
+    reserved = torch.cuda.memory_reserved()
+    print(f"Step {step} ({stage}): Allocated: {allocated / (1024 ** 3):.2f} GB, Reserved: {reserved / (1024 ** 3):.2f}")
+
+class Timer:
+    def __init__(self):
+        self.start_time = None
+
+    def start(self):
+        self.start_time = time.time()
+
+    def stop(self):
+        if self.start_time is None:
+            raise ValueError("Timer not started. Call start() before stop().")
+        elapsed_time = time.time() - self.start_time
+        self.start_time = None  # Reset timer
+        return elapsed_time
+
+def print_training_metrics(step, stage, duration=None):
+    allocated = torch.cuda.memory_allocated()
+    reserved = torch.cuda.memory_reserved()
+    time_info = f"{duration:.2f} s" if duration else "N/A"
+    print(f"Step {step} ({stage}): Allocated: {allocated / (1024 ** 3):.2f} GB, Reserved: {reserved / (1024 ** 3):.2f}, Duration: {time_info}")
+
+class TrainerMemoryMonitor(Trainer):
+    def log_training_metrics(self, step, stage, duration):
+        allocated = torch.cuda.memory_allocated()
+        reserved = torch.cuda.memory_reserved()
+        time_info = f"{duration:.2f} s" if duration else "N/A"
+
+        self.state.log_history.append({
+            'step': step,
+            'stage': stage,
+            'allocated': f"{allocated / (1024 ** 3):.2f} GB",
+            'reserved': f"{reserved / (1024 ** 3):.2f} GB",
+            'duration': time_info
+        })
+
+
+    def training_step(self, model, inputs, num_items_in_batch=None):
+        step = self.state.global_step
+        step_timer = Timer()
+        step_timer.start()
+        print_training_metrics(step, "training_step> before")
+
+        forward_timer = Timer()
+        forward_timer.start()
+
+        model.train()
+        inputs = self._prepare_inputs(inputs)
+
+        with self.compute_loss_context_manager():
+            print_training_metrics(step, "forward pass: -before")
+            loss = self.compute_loss(model, inputs)
+            print_training_metrics(step, "forward pass: -after", forward_timer.stop())
+
+        backward_timer = Timer()
+        backward_timer.start()
+
+        if self.args.n_gpu > 1:
+            loss = loss.mean()
+
+        torch.cuda.empty_cache()
+        print_training_metrics(step, "backward pass\ before")
+
+        if self.use_apex: 
+            with torch.cuda.amp.scale_loss(loss, self.optimizer) as scaled_loss:
+                scaled_loss.backward()
+        else:
+            self.accelerator.backward(loss)
+
+        print_training_metrics(step, "backward pass /after", backward_timer.stop())
+        print_training_metrics(step, "training_step> after", step_timer.stop())
+
+        torch.cuda.empty_cache()
+
+        return loss.detach() / self.args.gradient_accumulation_steps
+    
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)

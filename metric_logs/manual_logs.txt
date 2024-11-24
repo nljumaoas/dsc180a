@@ -1,0 +1,18 @@
+without flash attention (sdpa):
+
+Step 4 (training_step> before): Allocated: 18.44 GB, Reserved: 21.09, Duration: N/A
+Step 4 (forward pass: -before): Allocated: 18.44 GB, Reserved: 21.09, Duration: N/A
+Step 4 (forward pass: -after): Allocated: 27.48 GB, Reserved: 32.51, Duration: 0.19 s
+Step 4 (backward pass\ before): Allocated: 27.48 GB, Reserved: 27.58, Duration: N/A
+Step 4 (backward pass /after): Allocated: 18.44 GB, Reserved: 31.52, Duration: 0.45 s
+Step 4 (training_step> after): Allocated: 18.44 GB, Reserved: 31.52, Duration: 0.65 s
+
+
+with flash attention:
+
+Step 12 (training_step> before): Allocated: 18.44 GB, Reserved: 21.09, Duration: N/A
+Step 12 (forward pass: -before): Allocated: 18.44 GB, Reserved: 21.09, Duration: N/A
+Step 12 (forward pass: -after): Allocated: 27.26 GB, Reserved: 32.30, Duration: 0.17 s
+Step 12 (backward pass\ before): Allocated: 27.26 GB, Reserved: 27.38, Duration: N/A
+Step 12 (backward pass /after): Allocated: 18.44 GB, Reserved: 31.31, Duration: 0.41 s
+Step 12 (training_step> after): Allocated: 18.44 GB, Reserved: 31.31, Duration: 0.58 s
