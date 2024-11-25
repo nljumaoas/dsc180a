@@ -22,6 +22,7 @@ check_cuda_availability()
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Initialize training hyperparameters
+
 ## I/O Paths
 data_path = "./datasets/SlimPajama-6B_tokenized_data"
 # data_path = "/workspace/ML_team/datasets_70_1024/tokenized_data"
@@ -29,10 +30,7 @@ dataset_train = load_from_disk(os.path.join("/workspace/ML_team/datasets_pack_fu
 dataset_eval = load_from_disk(os.path.join("/workspace/ML_team/datasets_pack_full/tokenized_data", "validation"))
 model_path = './configs/model_configs/llama_1b_config.json'
 checkpoint_output_dir = './model_checkpoints'
-
-# deepspeed_config = './configs/deepspeed_configs/test_memory_ds_config.json' # set to deepspeed config from medium post
 deepspeed_config = './configs/deepspeed_configs/test_ds_zero3_plus_config.json'
-
 tokenizer_config = './configs/llama_tokenizer_configs'
 logging_dir = './logs'
 

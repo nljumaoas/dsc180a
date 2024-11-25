@@ -7,6 +7,7 @@ import numpy as np
 import torch
 import json
 import time
+from datetime import datetime
 
 CACHE_DIR = "./hf_cache"
 SAMPLE_OUTPUT_FILE = os.path.join(CACHE_DIR, "tokenized_sample_output.txt")
@@ -297,25 +298,49 @@ def print_training_metrics(step, stage, duration=None):
     print(f"Step {step} ({stage}): Allocated: {allocated / (1024 ** 3):.2f} GB, Reserved: {reserved / (1024 ** 3):.2f}, Duration: {time_info}")
 
 class TrainerMemoryMonitor(Trainer):
-    def log_training_metrics(self, step, stage, duration):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        # creates new folder if necessary
+        if not os.path.exists("metric_logs"):
+            os.makedirs("metric_logs")
+
+        # creates new log file upon instance creation
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.log_file_path = os.path.join("metric_logs", f"metrics_{timestamp}.jsonl")
+        
+        # initializes with empty line for safety
+        with open(self.log_file_path, "w") as f:
+            pass
+
+    def log_training_metrics(self, step, stage, duration=None):
         allocated = torch.cuda.memory_allocated()
         reserved = torch.cuda.memory_reserved()
         time_info = f"{duration:.2f} s" if duration else "N/A"
 
-        self.state.log_history.append({
+        metrics = {
             'step': step,
             'stage': stage,
             'allocated': f"{allocated / (1024 ** 3):.2f} GB",
             'reserved': f"{reserved / (1024 ** 3):.2f} GB",
             'duration': time_info
-        })
+        }
 
+        with open(self.log_file_path, "a") as f:
+            f.write(json.dumps(metrics) + "\n")
 
     def training_step(self, model, inputs, num_items_in_batch=None):
+        """
+        Alters the training_step method of the original Trainer object to include tracking of performance metrics.
+
+        Updates before/after forward pass, backward pass, and full step (6 total).
+
+        Currently produces output of 6 * gradient_accumulation_steps per iteration.
+        """
         step = self.state.global_step
         step_timer = Timer()
         step_timer.start()
-        print_training_metrics(step, "training_step> before")
+        self.log_training_metrics(step, "training_step> before")
 
         forward_timer = Timer()
         forward_timer.start()
@@ -324,9 +349,9 @@ class TrainerMemoryMonitor(Trainer):
         inputs = self._prepare_inputs(inputs)
 
         with self.compute_loss_context_manager():
-            print_training_metrics(step, "forward pass: -before")
+            self.log_training_metrics(step, "forward pass: -before")
             loss = self.compute_loss(model, inputs)
-            print_training_metrics(step, "forward pass: -after", forward_timer.stop())
+            self.log_training_metrics(step, "forward pass: -after", forward_timer.stop())
 
         backward_timer = Timer()
         backward_timer.start()
@@ -335,7 +360,7 @@ class TrainerMemoryMonitor(Trainer):
             loss = loss.mean()
 
         torch.cuda.empty_cache()
-        print_training_metrics(step, "backward pass\ before")
+        self.log_training_metrics(step, "backward pass\ before")
 
         if self.use_apex: 
             with torch.cuda.amp.scale_loss(loss, self.optimizer) as scaled_loss:
@@ -343,8 +368,8 @@ class TrainerMemoryMonitor(Trainer):
         else:
             self.accelerator.backward(loss)
 
-        print_training_metrics(step, "backward pass /after", backward_timer.stop())
-        print_training_metrics(step, "training_step> after", step_timer.stop())
+        self.log_training_metrics(step, "backward pass /after", backward_timer.stop())
+        self.log_training_metrics(step, "training_step> after", step_timer.stop())
 
         torch.cuda.empty_cache()
 
