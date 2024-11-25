@@ -1,49 +1,69 @@
+import torch
 from transformers import AutoTokenizer
 from datasets import load_dataset
 import os
+import argparse
 from utilities import seed_everything, print_dataset_shape
 
-# Define constants for caching paths and sequence length
-CACHE_DIR = "./hf_cache"
-TOKENIZER_DIR = './configs/llama_tokenizer_configs'
-TOKENIZED_DATA_CACHE_DIR = "./datasets/SlimPajama-6B_tokenized_data_baseline"
-MAX_SEQ_LEN = 2048
-DATASET_NAME = 'DKYoon/SlimPajama-6B'
-NUM_PROC = 50
-
-# Set random seed
+# Seed for reproducibility
 seed_everything(42)
 
-def prepare_and_cache_dataset():
+def prepare_and_cache_dataset(args):
+    """
+    Tokenizes and caches datasets based on provided command-line arguments.
+    Args:
+        args: Command-line arguments parsed via argparse.
+    """
     # Load the tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_DIR, cache_dir=CACHE_DIR)
-    tokenizer.pad_token = tokenizer.eos_token
+    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_path, cache_dir=args.cache_dir)
+    
+    # Load datasets
+    train_subset = load_dataset(args.dataset_name, split="train", cache_dir=args.cache_dir, download_mode='reuse_cache_if_exists')
+    validation_subset = load_dataset(args.dataset_name, split="validation", cache_dir=args.cache_dir, download_mode='reuse_cache_if_exists')
+    test_subset = load_dataset(args.dataset_name, split="test", cache_dir=args.cache_dir, download_mode='reuse_cache_if_exists')
 
-    # Load the dataset
-    print(f"Start Loading Dataset: {DATASET_NAME}...")
-    train_subset = load_dataset(DATASET_NAME, split="train[:10%]", cache_dir=CACHE_DIR, download_mode='reuse_cache_if_exists')
-    validation_subset = load_dataset(DATASET_NAME, split="validation[:10%]", cache_dir=CACHE_DIR, download_mode='reuse_cache_if_exists')
+    # Tokenization function with sequence packing and truncation
+    def pack_sequences_truncate(batch, max_length=args.max_seq_len):
+        input_ids, attention_masks = [], []
+        current_chunk = {"input_ids": []}
+        current_length = 0
 
-    # Tokenization function with max length truncation
-    def tokenize_function(examples):
-        return tokenizer(examples["text"], padding="max_length", truncation=True, max_length=MAX_SEQ_LEN)
+        for tokens in batch['text']:
+            tokenized = tokenizer(tokens, truncation=True, max_length=max_length, padding=False, return_overflowing_tokens=True, stride=int(max_length * 0.2))
+            for sequence in tokenized['input_ids']:
+                if (current_length + len(sequence) + 1) <= max_length:
+                    current_chunk["input_ids"].extend(sequence + [tokenizer.eos_token_id])
+                    current_length += len(sequence) + 1
+                else:
+                    input_ids.append(current_chunk["input_ids"][:max_length])
+                    attention_masks.append([1] * max_length)
+                    current_chunk = {"input_ids": sequence[:max_length - 1] + [tokenizer.eos_token_id]}
+                    current_length = len(current_chunk["input_ids"])
+        return {"input_ids": torch.tensor(input_ids), "attention_mask": torch.tensor(attention_masks), "labels": torch.tensor(input_ids)}
 
-    print(f"Tokenizing Dataset...")
-    # Apply tokenization and save to cache
-    train_tokenized_datasets = train_subset.map(tokenize_function, batched=True, remove_columns=["text"], num_proc=NUM_PROC)
-    validation_tokenized_dataset = validation_subset.map(tokenize_function, batched=True, remove_columns=["text"], num_proc=NUM_PROC)
+    # Apply tokenization
+    train_tokenized_dataset = train_subset.map(pack_sequences_truncate, batched=True, remove_columns=['text', 'meta', '__index_level_0__'], num_proc=args.num_proc)
+    validation_tokenized_dataset = validation_subset.map(pack_sequences_truncate, batched=True, remove_columns=['text', 'meta', '__index_level_0__'], num_proc=args.num_proc)
+    test_tokenized_dataset = test_subset.map(pack_sequences_truncate, batched=True, remove_columns=['text', 'meta', '__index_level_0__'], num_proc=args.num_proc)
 
-    # Display dataset shapes
-    print_dataset_shape(train_tokenized_datasets, "Training Dataset")
+    # Print dataset shapes
+    print_dataset_shape(train_tokenized_dataset, "Training Dataset")
     print_dataset_shape(validation_tokenized_dataset, "Validation Dataset")
 
-    # Save the tokenized datasets to disk
-    train_tokenized_datasets.save_to_disk(os.path.join(TOKENIZED_DATA_CACHE_DIR, "train"))
-    validation_tokenized_dataset.save_to_disk(os.path.join(TOKENIZED_DATA_CACHE_DIR, "validation"))
-
-    print(f"Tokenized datasets saved to disk: {TOKENIZED_DATA_CACHE_DIR}.")
-
-
+    # Save tokenized datasets to disk
+    train_tokenized_dataset.save_to_disk(os.path.join(args.output_dir, "train"))
+    validation_tokenized_dataset.save_to_disk(os.path.join(args.output_dir, "validation"))
+    test_tokenized_dataset.save_to_disk(os.path.join(args.output_dir, "test"))
+    print("Tokenized datasets saved to disk.")
 
 if __name__ == "__main__":
-    prepare_and_cache_dataset()
+    parser = argparse.ArgumentParser(description="Load, tokenize, and cache datasets for training.")
+    parser.add_argument("--cache_dir", type=str, default="/workspace/ML_team/hf_cache", help="Path to Hugging Face cache directory.")
+    parser.add_argument("--tokenizer_path", type=str, required=True, help="Path to the tokenizer directory.")
+    parser.add_argument("--dataset_name", type=str, default="DKYoon/SlimPajama-6B", help="Dataset name on Hugging Face hub.")
+    parser.add_argument("--output_dir", type=str, default="./datasets_pack_full/tokenized_data", help="Directory to save tokenized datasets.")
+    parser.add_argument("--max_seq_len", type=int, default=1024, help="Maximum sequence length for tokenization.")
+    parser.add_argument("--num_proc", type=int, default=8, help="Number of processes for tokenization.")
+
+    args = parser.parse_args()
+    prepare_and_cache_dataset(args)
