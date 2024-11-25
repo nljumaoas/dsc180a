@@ -7,7 +7,7 @@ import random
 import numpy as np
 import deepspeed
 from torch.cuda.amp import autocast
-from utilities import seed_everything, check_cuda_availability, determine_compute_dtype_and_attention, count_parameters
+from utilities import seed_everything, check_cuda_availability, determine_compute_dtype_and_attention, count_parameters, inspect_model_params
 
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -37,11 +37,11 @@ attn_implementation = determine_compute_dtype_and_attention()
 eval_strategy = "steps"
 vis_app = 'wandb'
 save_strategy = 'steps'
-save_steps = 1000
+save_steps = 50000
 logging_steps = 20
-eval_steps = 100
-num_epoch = 3
-batch_size = 8
+eval_steps = 10000
+num_epoch = 1
+batch_size = 16
 gradient_checkpointing = False
 fp16 = not torch.cuda.is_bf16_supported()
 bf16 = torch.cuda.is_bf16_supported()
@@ -68,11 +68,9 @@ def initialize_model(config_path='./configs/model_configs/llama_8b_config.json')
                                              attn_implementation=attn_implementation["attn_implementation"], 
                                              torch_dtype=attn_implementation["compute_dtype"])
     print(f"Total number of trainable parameters: {count_parameters(model):,}")
-    def inspect_model_params(model):
-        for name, param in model.named_parameters():
-            print(f"{name}: {param.numel()}")
+    
 
-    inspect_model_params(model)
+    # inspect_model_params(model)
     return model
 
 def main():

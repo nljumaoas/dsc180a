@@ -352,3 +352,46 @@ class TrainerMemoryMonitor(Trainer):
     
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+def inspect_model_params(model):
+        for name, param in model.named_parameters():
+            print(f"{name}: {param.numel()}")
+
+def calculate_layers(V, H, I, N, h=None, g_size=None):
+    # Embedding Layer
+    embedding_layer = V * H
+    print(f"Embedding Layer: {embedding_layer}")
+
+    # RMS Norm Layer
+    rms_norm_layer = H
+    print(f"RMS Norm Layer: {rms_norm_layer}")
+
+    # Query (Q), Key (K), Value (V)
+    q = H * H  # Or can be H * h * (H / h), but it simplifies to H * H
+    if g_size is None:
+        k = H * H
+        v = H * H
+    else:
+        k = H * H / g_size
+        v = H * H / g_size
+    print(f"Query (Q): {q}")
+    print(f"Key (K): {k}")
+    print(f"Value (V): {v}")
+
+    # Output (O)
+    o = H * H
+    print(f"Output (O): {o}")
+
+    # MLP calculation
+    mlp = 2 * H * I + I * H
+    print(f"MLP: {mlp}")
+
+    # Attention Blocks
+    attention_blocks = N * (2 * rms_norm_layer + q + k + v + o + mlp)
+    print(f"Attention Blocks: {attention_blocks}")
+
+    # All Layers (Sum of all components)
+    all_layers = embedding_layer + attention_blocks + rms_norm_layer 
+
+    print(f"All Layers: {all_layers}")
+    return all_layers

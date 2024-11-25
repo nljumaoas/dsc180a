@@ -1,10 +1,15 @@
-from utilities import estimate_memory_usage, infer_from_checkpoint, count_parameters
+from utilities import estimate_memory_usage, infer_from_checkpoint, count_parameters, determine_compute_dtype_and_attention, calculate_layers
 from transformers import AutoTokenizer, AutoConfig, AutoModelForCausalLM
 
 NUM_GPUS=2
 
 
 if __name__ == "__main__":
+
+
+    data_path = "/workspace/ML_team/datasets_pack_full/tokenized_data"
+    config_path = './configs/model_configs/llama_190M_config.json'
+    attn_implementation = determine_compute_dtype_and_attention()
     
     # estimate_memory_usage(num_gpus=NUM_GPUS, num_nodes=1)
     # llm_reply = infer_from_checkpoint()
@@ -35,16 +40,45 @@ if __name__ == "__main__":
     # print(f"the training steps: {computing_budget**(a_c_min/a_s)}")
     # print(f"the training steps: {computing_budget**0.03}")
     # print(f"the optimal loss: {(3.1*10**8 /computing_budget)**0.05}")
-    # print(f"Corresponding compute loss: {(N_c /N)**a_n + (S_c/S)**a_s }")
-    config = AutoConfig.from_pretrained(config_path)
-    model = AutoModelForCausalLM.from_config(config, 
-                                             attn_implementation=attn_implementation["attn_implementation"], 
-                                             torch_dtype=attn_implementation["compute_dtype"])
-    print(f"Total number of trainable parameters: {count_parameters(model):,}")
-    def inspect_model_params(model):
-        for name, param in model.named_parameters():
-            print(f"{name}: {param.numel()}")
+    # # print(f"Corresponding compute loss: {(N_c /N)**a_n + (S_c/S)**a_s }")
+    # config = AutoConfig.from_pretrained(config_path)
+    # model = AutoModelForCausalLM.from_config(config, 
+    #                                          attn_implementation=attn_implementation["attn_implementation"], 
+    #                                          torch_dtype=attn_implementation["compute_dtype"])
+    # print(f"Total number of trainable parameters: {count_parameters(model):,}")
+    # def inspect_model_params(model):
+    #     for name, param in model.named_parameters():
+    #         print(f"{name}: {param.numel()}")
 
-    inspect_model_params(model)
+    # inspect_model_params(model)
 
+    gpu_flops = 149.7 * 10**12
+    day_time = 24 * 60 * 60
+    num_gpus = 2
+    mfu = 0.26
+    C= gpu_flops * day_time * num_gpus * mfu
+    print(f"utilized_flops: {C}")
+    print(f"")
+
+    # Define functions for N_opt(C), D_opt(C), and L_opt(C)
+def N_opt(C):
+    return 0.6 * C**0.45
+
+def D_opt(C):
+    return 0.3 * C**0.55
+
+def L_opt(C):
+    return 1070 * C**-0.154 + 1.7
+
+# Calculate values
+N_opt_value = N_opt(C)
+D_opt_value = D_opt(C)
+L_opt_value = L_opt(C)
+
+# Print results
+print(f"Utilized FLOPs (C): {C:.2e}")
+print(f"N_opt(C): {N_opt_value:.2e}")
+print(f"D_opt(C): {D_opt_value:.2e}")
+print(f"L_opt(C): {L_opt_value:.2e}")
+print(f"customized model: {calculate_layers(128256, 896, 3584, 16, g_size=2)}")
 
