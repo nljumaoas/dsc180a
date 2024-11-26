@@ -395,3 +395,30 @@ def calculate_layers(V, H, I, N, h=None, g_size=None):
 
     print(f"All Layers: {all_layers}")
     return all_layers
+
+
+def calculate_optimal_scaling_law(C):
+    """
+    Calculate the optimal number of parameters (N), training tokens (D), 
+    and expected loss (L) given a compute budget (C) based on Chinchilla scaling laws.
+
+    Parameters:
+    C (float): Compute budget in FLOPs.
+
+    Returns:
+    dict: A dictionary containing the optimal N, D, and L values.
+    """
+    # Calculate optimal N (number of parameters)
+    N_opt = 0.6 * (C ** 0.45)
+    
+    # Calculate optimal D (number of training tokens)
+    D_opt = 0.3 * (C ** 0.55)
+    
+    # Calculate optimal L (expected loss or optimal layers)
+    L_opt = 1070 * (C ** -0.154) + 1.7
+    
+    result = {"N_opt": N_opt, "D_opt": D_opt, "L_opt": L_opt}
+    print(result)
+    return result
+
+
