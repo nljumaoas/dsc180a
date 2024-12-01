@@ -220,7 +220,7 @@ def MFU_calculation(batch_size, sequence_length, model_name, number_of_GPU, GPU_
 
 def infer_from_checkpoint(
     model_path: str = '/workspace/ML_team/train/model_checkpoints/checkpoint-2000',
-    prompt: str = "Hello, how's it going?",
+    prompt: str = "Hello, what's zebra? Could you describe it?",
     max_length: int = 50
 ) -> str:
     """
@@ -272,12 +272,19 @@ def infer_from_checkpoint(
     except Exception as e:
         return f"An error occurred during inference: {str(e)}"
 
-def print_memory_usage(step, stage):
+def print_training_metrics(step, stage, duration=None):
+    """
+    Currently not in use in favor of the log_training_metrics method in TrainerMemoryMonitor
+    """
     allocated = torch.cuda.memory_allocated()
     reserved = torch.cuda.memory_reserved()
-    print(f"Step {step} ({stage}): Allocated: {allocated / (1024 ** 3):.2f} GB, Reserved: {reserved / (1024 ** 3):.2f}")
+    time_info = f"{duration:.2f} s" if duration else "N/A"
+    print(f"Step {step} ({stage}): Allocated: {allocated / (1024 ** 3):.2f} GB, Reserved: {reserved / (1024 ** 3):.2f}, Duration: {time_info}")
 
 class Timer:
+    """
+    Used in TrainerMemoryMonitor to measure duration of each step.
+    """
     def __init__(self):
         self.start_time = None
 
@@ -290,12 +297,6 @@ class Timer:
         elapsed_time = time.time() - self.start_time
         self.start_time = None  # Reset timer
         return elapsed_time
-
-def print_training_metrics(step, stage, duration=None):
-    allocated = torch.cuda.memory_allocated()
-    reserved = torch.cuda.memory_reserved()
-    time_info = f"{duration:.2f} s" if duration else "N/A"
-    print(f"Step {step} ({stage}): Allocated: {allocated / (1024 ** 3):.2f} GB, Reserved: {reserved / (1024 ** 3):.2f}, Duration: {time_info}")
 
 class TrainerMemoryMonitor(Trainer):
     def __init__(self, *args, **kwargs):
@@ -420,3 +421,54 @@ def calculate_layers(V, H, I, N, h=None, g_size=None):
 
     print(f"All Layers: {all_layers}")
     return all_layers
+
+def MFU_calculation_with_config(config_path, batch_size, sequence_length, number_of_GPU, GPU_peak_TFLOPS, iteration_time):
+    """
+    Calculates Model FLOPs Utilization (MFU) for a given model and hardware setup, using a configuration file.
+
+    Parameters:
+    - config_path (str): Path to the model's configuration JSON file.
+    - batch_size (int): Batch size used in training.
+    - sequence_length (int): Sequence length of the input data.
+    - number_of_GPU (int): Number of GPUs used.
+    - GPU_peak_TFLOPS (float): Theoretical peak TFLOPs of a single GPU.
+    - iteration_time (float): Time taken for one iteration (in seconds).
+
+    Returns:
+    - str: MFU as a percentage rounded to 4 decimal places.
+    """
+    # Load configuration from the JSON file
+    with open(config_path, 'r') as config_file:
+        config = json.load(config_file)
+    
+    v = config.get('vocab_size', 0)  # Vocabulary size
+    n = config.get('num_attention_heads', 0)  # Number of attention heads
+    h = config.get('hidden_size', 0)  # Hidden state dimension
+    i = config.get('intermediate_size', 0)  # SwiGLU projection dimension
+    N = config.get('num_hidden_layers', 0)  # Number of layers
+    
+    # Ensure all parameters are available
+    if not all([v, n, h, i, N]):
+        raise ValueError("Configuration file is missing one or more required parameters.")
+    
+    b = batch_size
+    s = sequence_length
+
+    # FLOPs calculation for one forward pass
+    flops_per_forward = (
+        N * (6 * b * s * h**2 + 4 * b * s**2 * h + 3 * b * s**2 * n + 2 * b * s * h**2)
+        + N * (6 * b * s * h * i)
+        + 2 * b * s * h * v
+    )
+
+    # Forward-backward pass is roughly 3 times the forward pass FLOPs
+    flops_per_forward_backward = (3 * flops_per_forward) / 10**12  # Convert to TFLOPs
+
+    # GPU peak TFLOPs per iteration
+    GPU_TFLOPs_per_iteration = number_of_GPU * GPU_peak_TFLOPS * iteration_time
+
+    # Calculate MFU
+    MFU = (flops_per_forward_backward / GPU_TFLOPs_per_iteration) * 100
+
+    # Return MFU rounded to 4 decimal places
+    return f"MFU: {MFU:.4f}%"

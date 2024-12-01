@@ -7,13 +7,13 @@ NUM_GPUS=2
 if __name__ == "__main__":
 
 
-    data_path = "/workspace/ML_team/datasets_pack_full/tokenized_data"
-    config_path = './configs/model_configs/llama_190M_config.json'
-    attn_implementation = determine_compute_dtype_and_attention()
+    # data_path = "/workspace/ML_team/datasets_pack_full/tokenized_data"
+    # config_path = './configs/model_configs/llama_425M_config.json'
+    # attn_implementation = determine_compute_dtype_and_attention()
     
-    # estimate_memory_usage(num_gpus=NUM_GPUS, num_nodes=1)
-    # llm_reply = infer_from_checkpoint()
-    # print(f'Test LLM replies: {llm_reply}')
+    # # estimate_memory_usage(num_gpus=NUM_GPUS, num_nodes=1)
+    llm_reply = infer_from_checkpoint(model_path="./model_checkpoints/checkpoint-100000")
+    print(f'Test LLM replies: {llm_reply}')
 
     # a_n = 0.076
     # a_d = 0.095
@@ -45,40 +45,47 @@ if __name__ == "__main__":
     # model = AutoModelForCausalLM.from_config(config, 
     #                                          attn_implementation=attn_implementation["attn_implementation"], 
     #                                          torch_dtype=attn_implementation["compute_dtype"])
+
+#     gpu_flops = 149.7 * 10**12
+#     day_time = 24 * 60 * 60
+#     num_gpus = 2
+#     mfu = 0.26
+#     C= gpu_flops * day_time * num_gpus * mfu
+#     print(f"utilized_flops: {C}")
+#     print(f"")
+
+#     # Define functions for N_opt(C), D_opt(C), and L_opt(C)
+# def N_opt(C):
+#     return 0.6 * C**0.45
+
+# def D_opt(C):
+#     return 0.3 * C**0.55
+
+# def L_opt(C):
+#     return 1070 * C**-0.154 + 1.7
+
+# # Calculate values
+# N_opt_value = N_opt(C)
+# D_opt_value = D_opt(C)
+# L_opt_value = L_opt(C)
+
+# # Print results
+# print(f"Utilized FLOPs (C): {C:.2e}")
+# print(f"N_opt(C): {N_opt_value:.2e}")
+# print(f"D_opt(C): {D_opt_value:.2e}")
+# print(f"L_opt(C): {L_opt_value:.2e}")
+# print(f"customized model: {calculate_layers(128256, 896, 3584, 16, g_size=2)}")
+
+    # print(calculate_layers(128256, 1024, 3584, 16, g_size=4))
+
+    # config = AutoConfig.from_pretrained(config_path)
+    # model = AutoModelForCausalLM.from_config(config, 
+    #                                          attn_implementation=attn_implementation["attn_implementation"], 
+    #                                          torch_dtype=attn_implementation["compute_dtype"])
+
     # print(f"Total number of trainable parameters: {count_parameters(model):,}")
     # def inspect_model_params(model):
     #     for name, param in model.named_parameters():
     #         print(f"{name}: {param.numel()}")
 
     # inspect_model_params(model)
-
-    gpu_flops = 149.7 * 10**12
-    day_time = 24 * 60 * 60
-    num_gpus = 2
-    mfu = 0.26
-    C= gpu_flops * day_time * num_gpus * mfu
-    print(f"utilized_flops: {C}")
-    print(f"")
-
-    # Define functions for N_opt(C), D_opt(C), and L_opt(C)
-def N_opt(C):
-    return 0.6 * C**0.45
-
-def D_opt(C):
-    return 0.3 * C**0.55
-
-def L_opt(C):
-    return 1070 * C**-0.154 + 1.7
-
-# Calculate values
-N_opt_value = N_opt(C)
-D_opt_value = D_opt(C)
-L_opt_value = L_opt(C)
-
-# Print results
-print(f"Utilized FLOPs (C): {C:.2e}")
-print(f"N_opt(C): {N_opt_value:.2e}")
-print(f"D_opt(C): {D_opt_value:.2e}")
-print(f"L_opt(C): {L_opt_value:.2e}")
-print(f"customized model: {calculate_layers(128256, 896, 3584, 16, g_size=2)}")
-

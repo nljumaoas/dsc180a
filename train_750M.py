@@ -11,7 +11,7 @@ from utilities import seed_everything, check_cuda_availability, determine_comput
 
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,3,4"
 os.environ["MASTER_ADDR"] = "localhost" 
 os.environ["MASTER_PORT"] = "9994"
 # os.environ["NCCL_P2P_DISABLE"] = '1'
@@ -25,10 +25,10 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 ## I/O Paths
 # data_path = "./datasets/SlimPajama-6B_tokenized_data"
 data_path = "/workspace/ML_team/datasets_pack_full/tokenized_data"
-model_path = './configs/model_configs/llama_190M_config.json'
+model_path = './configs/model_configs/llama_750M_config.json'
 checkpoint_output_dir = './model_checkpoints'
 deepspeed_config = './configs/deepspeed_configs/test_ds_zero2_config.json'
-tokenizer_config = './configs/llama_tokenizer_configs'
+tokenizer_config = '/workspace/ML_team/llama_tokenizer_1b'
 logging_dir = './logs'
 
 ## Training args
@@ -37,18 +37,18 @@ attn_implementation = determine_compute_dtype_and_attention()
 eval_strategy = "steps"
 vis_app = 'wandb'
 save_strategy = 'steps'
-save_steps = 50000
+save_steps = 10000
 logging_steps = 20
 eval_steps = 10000
 num_epoch = 1
-batch_size = 16
+batch_size = 12
 gradient_checkpointing = False
 fp16 = not torch.cuda.is_bf16_supported()
 bf16 = torch.cuda.is_bf16_supported()
-learning_rate = 6e-4
-gradient_accumulation = 1
+learning_rate = 5e-4
+gradient_accumulation = 5
 weight_decay = 0.1 * learning_rate
-save_total_limit=2
+save_total_limit=3
 
 # Wandb variables
 wandb_key = 'ae05f44c8d5afe19940ef81e6f5cf69063392241'
@@ -57,7 +57,6 @@ entity_name = 'fjiang7-ucsd'
 
 
 def initialize_model(config_path='./configs/model_configs/llama_8b_config.json'):
-    # the default config path is for llama 3.1 8b model
     # with deepspeed.zero.Init():
     #     config = AutoConfig.from_pretrained(config_path)
     #     model = AutoModelForCausalLM.from_config(config, 
@@ -68,6 +67,7 @@ def initialize_model(config_path='./configs/model_configs/llama_8b_config.json')
                                              attn_implementation=attn_implementation["attn_implementation"], 
                                              torch_dtype=attn_implementation["compute_dtype"])
     print(f"Total number of trainable parameters: {count_parameters(model):,}")
+    inspect_model_params(model)
     
 
     # inspect_model_params(model)
@@ -90,8 +90,18 @@ def main():
 
 
 
-    dataset_train = load_from_disk(os.path.join(data_path, "train"))
+    dataset_train = load_from_disk(os.path.join(data_path, "train/chunk1"))
     dataset_eval = load_from_disk(os.path.join(data_path, "validation"))
+
+    # Select the first 76% of the training data
+    print(f"the full traiing shape: {len(dataset_train)}")
+    train_size = int(0.3179 * len(dataset_train))  # Calculate 40% of the dataset size
+    print(f"the training shape: {train_size / 10**9}")
+    dataset_train = dataset_train.select(range(train_size))
+
+    # Select the first 76% of the evaluation data
+    eval_size = int(0.3179 * len(dataset_eval))  # Calculate 40% of the dataset size
+    dataset_eval = dataset_eval.select(range(eval_size))
 
 
     torch.cuda.empty_cache()  # Clear any residual GPU memory usage
