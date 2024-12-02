@@ -12,7 +12,7 @@ if __name__ == "__main__":
     # attn_implementation = determine_compute_dtype_and_attention()
     
     # # estimate_memory_usage(num_gpus=NUM_GPUS, num_nodes=1)
-    llm_reply = infer_from_checkpoint(model_path="./model_checkpoints/checkpoint-100000")
+    llm_reply = infer_from_checkpoint(model_path="./model_checkpoints/checkpoint-22318-llama-750M")
     print(f'Test LLM replies: {llm_reply}')
 
     # a_n = 0.076

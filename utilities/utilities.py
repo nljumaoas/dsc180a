@@ -220,7 +220,7 @@ def MFU_calculation(batch_size, sequence_length, model_name, number_of_GPU, GPU_
 
 def infer_from_checkpoint(
     model_path: str = '/workspace/ML_team/train/model_checkpoints/checkpoint-2000',
-    prompt: str = "Hello, what's zebra? Could you describe it?",
+    prompt: str = "What did you eat for lunch? Could you describe your lunch?",
     max_length: int = 50
 ) -> str:
     """
@@ -238,6 +238,8 @@ def infer_from_checkpoint(
         else:
             raise RuntimeError("CUDA device is not available. Please ensure a GPU is accessible.")
         
+        # force to use cpu now
+        device = torch.device('cpu')
         # Load the tokenizer and model from the checkpoint
         tokenizer = AutoTokenizer.from_pretrained(model_path)
         model = AutoModelForCausalLM.from_pretrained(model_path)
@@ -253,18 +255,21 @@ def infer_from_checkpoint(
         # Move the model to the CUDA device
         model.to(device)
         
-        # Encode the input prompt and move it to CUDA
-        input_ids = tokenizer(prompt, return_tensors="pt", padding=True, truncation=True).input_ids.to(device)
-        # Please corresponding attention masks
-        # Generate text with specific settings
+        inputs = tokenizer(prompt, return_tensors="pt", padding=True, truncation=True)
+        input_ids = inputs['input_ids'].to(device)
+        attention_mask = inputs['attention_mask'].to(device)  # Add attention mask
+
+        # Generate text with specified decoding parameters
         output = model.generate(
-            input_ids,
+            input_ids=input_ids,
+            attention_mask=attention_mask,  # Explicitly pass the attention mask
             max_length=max_length,
             num_return_sequences=1,
-            pad_token_id=tokenizer.pad_token_id,  # Handle pad tokens
-            do_sample=True,  # Enable sampling for diverse outputs
+            pad_token_id=tokenizer.pad_token_id,  # Specify the pad token ID
+            do_sample=True,  # Enable sampling for diversity
             top_k=50,  # Top-k sampling
-            top_p=0.9  # Nucleus sampling
+            top_p=0.9,  # Nucleus sampling
+            temperature=0.7,  # Optional: Add randomness to sampling
         )
         
         # Decode and return the generated text

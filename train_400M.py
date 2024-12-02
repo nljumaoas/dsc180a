@@ -26,7 +26,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # data_path = "./datasets/SlimPajama-6B_tokenized_data"
 data_path = "/workspace/ML_team/datasets_pack_full/tokenized_data"
 model_path = './configs/model_configs/llama_400M_config.json'
-checkpoint_model_path = "./model_checkpoints/checkpoint-18000"
+checkpoint_model_path = "./model_checkpoints/checkpoint-23484-llama-400M"
 checkpoint_output_dir = './model_checkpoints'
 deepspeed_config = './configs/deepspeed_configs/test_ds_zero2_config.json'
 tokenizer_config = '/workspace/ML_team/llama_tokenizer_1b'
@@ -49,7 +49,7 @@ bf16 = torch.cuda.is_bf16_supported()
 learning_rate = 5e-4
 gradient_accumulation = 4
 weight_decay = 0.1 * learning_rate
-save_total_limit=3
+save_total_limit=4
 
 # Wandb variables
 wandb_key = 'ae05f44c8d5afe19940ef81e6f5cf69063392241'
@@ -100,13 +100,13 @@ def main():
 
     # Select the first 76% of the training data
     print(f"the full traiing shape: {len(dataset_train)}")
-    train_size = int(0.765 * len(dataset_train))  # Calculate 40% of the dataset size
+    train_size = int(0.92486 * len(dataset_train))  # Calculate 40% of the dataset size
     print(f"the training shape: {train_size / 10**9}")
-    dataset_train = dataset_train.select(range(train_size))
+    dataset_train = dataset_train.select(range(train_size, len(dataset_train)))
 
-    # Select the first 76% of the evaluation data
-    eval_size = int(0.765 * len(dataset_eval))  # Calculate 40% of the dataset size
-    dataset_eval = dataset_eval.select(range(eval_size))
+    # # Select the first 76% of the evaluation data
+    # eval_size = int(0.92486 * len(dataset_eval))  # Calculate 40% of the dataset size
+    # dataset_eval = dataset_eval.select(range(eval_size, len(datas)))
 
 
     torch.cuda.empty_cache()  # Clear any residual GPU memory usage
@@ -130,7 +130,7 @@ def main():
         deepspeed = deepspeed_config,
         fp16 = fp16,
         bf16 = bf16,  
-        warmup_steps=500,
+        warmup_steps=50,
         gradient_checkpointing = gradient_checkpointing,
         save_strategy = save_strategy,
         save_total_limit=save_total_limit,
